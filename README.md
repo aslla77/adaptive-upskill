@@ -136,8 +136,11 @@ skills/adaptive-upskill/
 ├── 09-state-contract.md           file contract and recovery
 ├── 10-ui-contract.md              dashboard contract
 ├── 11-execution-environments.md   none / local / notebook / colab
+├── 12-html-lessons.md             the lesson payload format
 ├── scripts/                       Python 3.8, standard library only
-└── assets/schemas/
+└── assets/
+    ├── lesson-shell.html          fixed page; never regenerated per lesson
+    └── schemas/
 ```
 
 `SKILL.md` stays a navigator on purpose. Skill bodies are a recurring token cost and get truncated when a long session compacts, so the detail sits in files that load only when the step needs them.
@@ -159,7 +162,10 @@ The prerequisite graph borrows the **direction** of the surmise relation (Doigno
 - **Certification and factual-recall subjects are not supported.** The recall scheduling they need is minimal here.
 - **Speaking and listening cannot be measured.** For a speaking goal the skill says so instead of approximating it in text.
 - **Rubric scoring stays a judgement.** Free-response items are graded by a model against a rubric written before the answer existed. Deterministic items are preferred everywhere they are possible.
-- **The HTML dashboard is not built yet.** Its contract exists; the renderer does not.
+- **The progress dashboard is not built yet.** Its contract exists; the renderer does
+  not. Lesson pages are separate and do work.
+- **Answer hashing is not cryptographic.** It stops accidental exposure, not a determined
+  reader.
 - **v0.1.** The learning loop and the reference fixtures are verified; long-run behaviour across many sessions is not.
 
 ## Verification

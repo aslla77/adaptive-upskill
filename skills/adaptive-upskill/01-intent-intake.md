@@ -37,6 +37,10 @@ genuinely unclear. Full rules in `11-execution-environments.md`.
 The question is not "is this code?" but **"can they actually run it where they are?"**
 Someone learning PyTorch should be training on MNIST, not fighting a CUDA install.
 
+Separately, set `presentation`: `chat` by default, and **`html` for every language
+subject** (enforced -- a terminal cannot render furigana or CJK widths). Any subject may
+opt into `html` when the material needs tables, annotation, or typed answers.
+
 **`none` is a real answer.** Japanese and pure maths need no tooling, and a setup step in
 front of them wastes the first session. Those subjects run entirely in chat and use the
 identical scoring path; they simply never generate a notebook.
@@ -95,6 +99,7 @@ Print this table and get a yes:
 | Subject | … |
 | Archetype | A/B/C - mastery here means "…" |
 | Environment | none / local / notebook / colab - one line of reasoning |
+| Lessons shown in | chat / html |
 | Goal type | artifact / capability / exam / understanding |
 | Done when | (one observable sentence) |
 | Background | (their words, marked as self-report) |

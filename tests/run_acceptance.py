@@ -8,6 +8,7 @@ probe at a time until the script says STOP -- so item counts are measured, not a
 Run:  python3 tests/run_acceptance.py
 """
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -241,6 +242,28 @@ def main():
         check("A11 notebook task round-trips to evidence", not problems,
               "; ".join(problems) or summary)
 
+        print("\nA12 html lessons")
+        check("A12 archetype C defaults to presentation 'html'",
+              core.validate_competency(
+                  {"archetype": "C", "execution_environment": "none",
+                   "concepts": [{"id": "x", "importance": 1.0, "goal_relevance": 1.0}]}
+              )["presentation"] == "html")
+        check("A12 archetype C cannot be forced back to chat",
+              _rejects_presentation("C", "chat"))
+        check("A12 other archetypes default to chat",
+              core.validate_competency(
+                  {"archetype": "A",
+                   "concepts": [{"id": "x", "importance": 1.0, "goal_relevance": 1.0}]}
+              )["presentation"] == "chat")
+
+        html_root = os.path.join(workdir, "html")
+        problems, summary = html_roundtrip(html_root)
+        check("A12 lesson renders, hides answers, and round-trips to evidence",
+              not problems, "; ".join(problems) or summary)
+
+        parity, detail = hash_parity()
+        check("A12 python and browser hashes agree", parity, detail)
+
         print("\nsecurity")
         leaked = grep_secrets()
         check("no provider keys or tokens in the skill package", not leaked,
@@ -347,6 +370,135 @@ def notebook_roundtrip(root):
         problems.append("a result with the wrong check count was accepted")
 
     return problems, "2/3 -> mastery %.3f, also-concept recorded" % mastery["pt-loop"]["value"]
+
+
+def _rejects_presentation(archetype, presentation):
+    doc = {"archetype": archetype, "execution_environment": "none",
+           "presentation": presentation,
+           "concepts": [{"id": "x", "importance": 1.0, "goal_relevance": 1.0}]}
+    try:
+        core.validate_competency(doc)
+        return False
+    except core.UpskillError:
+        return True
+
+
+LESSON = {
+    "lesson_id": "ja-openings-01",
+    "title": "メール[めーる]の書[か]き出[だ]し",
+    "blocks": [{"type": "example", "target": "お世話[せわ]になっております。",
+                "gloss": "standard opener"}],
+    "items": [
+        {"id": "q1", "type": "choice", "concept": "ja-openings", "level": 1,
+         "prompt": "Second email to a client?",
+         "choices": ["初[はじ]めてご連絡[れんらく]いたします。",
+                     "お世話[せわ]になっております。"],
+         "answer": 1},
+        {"id": "q2", "type": "cloze", "concept": "ja-openings", "level": 2,
+         "prompt": "よろしくお____いいたします。", "answer": "ねが"},
+        {"id": "q3", "type": "free", "concept": "ja-requests", "level": 3,
+         "prompt": "Ask for the invoice by Friday."},
+    ],
+}
+
+
+def html_roundtrip(root):
+    problems = []
+    env = dict(os.environ, UPSKILL_ROOT=root, UPSKILL_NOW="2026-08-15T11:00:00Z")
+    os.makedirs(root)
+    cmap = os.path.join(root, "map.json")
+    with open(cmap, "w", encoding="utf-8") as fh:
+        json.dump({"version": 1, "subject": "japanese", "archetype": "C",
+                   "execution_environment": "none",
+                   "concepts": [
+                       {"id": "ja-openings", "importance": 1.1, "goal_relevance": 1.5,
+                        "prerequisites": []},
+                       {"id": "ja-requests", "importance": 1.3, "goal_relevance": 1.5,
+                        "prerequisites": ["ja-openings"]}]}, fh)
+    lesson = os.path.join(root, "lesson.json")
+    with open(lesson, "w", encoding="utf-8") as fh:
+        json.dump(LESSON, fh, ensure_ascii=False)
+
+    subprocess.run([sys.executable, os.path.join(SCRIPTS, "upskill.py"),
+                    "init", "--file", cmap], capture_output=True, text=True, env=env)
+    gen = subprocess.run([sys.executable, os.path.join(SCRIPTS, "render_lesson.py"),
+                          "--subject", "japanese", "--lesson", lesson],
+                         capture_output=True, text=True, env=env)
+    if gen.returncode != 0:
+        return ["render_lesson failed: %s" % gen.stderr.strip()], ""
+
+    page = os.path.join(root, "japanese", "lessons", "ja-openings-01.html")
+    if not os.path.exists(page):
+        return ["lesson page not written"], ""
+    with open(page, encoding="utf-8") as fh:
+        html = fh.read()
+
+    if '"answer"' in html:
+        problems.append("a plaintext answer survived into the page")
+    if "ねが" in html.split('id="lesson-data"')[0]:
+        problems.append("an answer leaked outside the data payload")
+    if "answer_hash" not in html:
+        problems.append("answers were not hashed")
+    if re.search(r'(src|href)="https?://', html):
+        problems.append("the page requests an external resource")
+    # Assignment, not the word: the shell mentions innerHTML in a comment saying
+    # it never uses one.
+    if re.search(r"innerHTML\s*(=[^=]|\+=)", html):
+        problems.append("the shell assigns to innerHTML")
+    if re.search(r"document\.write|eval\s*\(", html):
+        problems.append("the shell uses document.write or eval")
+
+    manifest_path = os.path.join(root, "japanese", "items", "ja-openings-01.json")
+    manifest = json.load(open(manifest_path, encoding="utf-8"))
+    if manifest["total_checks"] != 2:
+        problems.append("manifest counts %d gradable items, expected 2"
+                        % manifest["total_checks"])
+    if [f["id"] for f in manifest["free_items"]] != ["q3"]:
+        problems.append("free-response item not recorded in the manifest")
+
+    ing = subprocess.run([sys.executable, os.path.join(SCRIPTS, "upskill.py"),
+                          "ingest", "--subject", "japanese", "--checkpoint", "--json",
+                          "--output", "UPSKILL_RESULT ja-openings-01 2/2\n\n"
+                                      "--- free responses ---\n[q3] ..."],
+                         capture_output=True, text=True, env=env)
+    if ing.returncode != 0:
+        return problems + ["ingest failed: %s" % ing.stderr.strip()], ""
+    mastery = json.loads(ing.stdout)["mastery"]
+    if mastery["ja-openings"]["status"] == "advanced":
+        problems.append("archetype C reached 'advanced' without any review evidence")
+    return problems, "2/2 ingested, ja-openings %s" % mastery["ja-openings"]["status"]
+
+
+def hash_parity():
+    """The page and the renderer must agree, or every answer is graded wrong."""
+    import shutil as _shutil
+    sys.path.insert(0, SCRIPTS)
+    from render_lesson import fnv1a, normalize  # noqa: E402
+
+    samples = ["ohayou", "お世話になっております", "Bonjour, ça va ?", "2",
+               "ねが", "𩸽 ほっけ", "Grüße", "ō macron", "  spaced   out  "]
+    expected = [fnv1a(normalize(s)) for s in samples]
+
+    node = _shutil.which("node")
+    if not node:
+        return True, "node not installed; python side only (%d samples)" % len(samples)
+    script = (
+        "function hash(s){var h=0x811c9dc5;for(var i=0;i<s.length;i++){"
+        "h^=s.charCodeAt(i);h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0;}"
+        "return('0000000'+h.toString(16)).slice(-8);}"
+        "function norm(s){return String(s).normalize('NFC')"
+        ".replace(/\\s+/g,' ').trim().toLowerCase();}"
+        "console.log(%s.map(function(s){return hash(norm(s));}).join('\\n'));"
+        % json.dumps(samples)
+    )
+    proc = subprocess.run([node, "-e", script], capture_output=True, text=True)
+    if proc.returncode != 0:
+        return False, "node failed: %s" % proc.stderr.strip()
+    got = proc.stdout.strip().split("\n")
+    if got != expected:
+        bad = [s for s, a, b in zip(samples, expected, got) if a != b]
+        return False, "disagree on: %s" % ", ".join(bad)
+    return True, "%d samples incl. CJK, diacritics, astral plane" % len(samples)
 
 
 PORTABLE_FIELDS = {"name", "description", "license", "compatibility",

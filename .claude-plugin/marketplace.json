@@ -9,7 +9,7 @@
       "name": "adaptive-upskill",
       "source": "./",
       "description": "Adaptive diagnostic, prerequisite-aware study plans, and evidence-based mastery tracking for AI coding agents.",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }

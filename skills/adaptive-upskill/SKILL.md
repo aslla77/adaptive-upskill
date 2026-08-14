@@ -158,8 +158,21 @@ module. Never work through the whole plan in one go.
 Read `08-lesson-authoring.md`. The shape is fixed: **explain → retrieval → application →
 checkpoint**. Re-explaining is what you do when a checkpoint fails, not the default.
 
-Save the lesson to `.upskill/<subject>/lessons/<concept>-<n>.md`. Markdown is the source;
-HTML is only ever a rendering of it.
+How the lesson is delivered comes from `presentation` on the competency map:
+
+- **`chat`** (default) — write it in the conversation and save the markdown to
+  `.upskill/<subject>/lessons/<concept>-<n>.md`.
+- **`html`** (always for language subjects) — write a lesson **JSON payload** and render it:
+  ```bash
+  python3 $SCRIPTS/render_lesson.py --subject <s> --lesson <lesson.json>
+  ```
+  Read `12-html-lessons.md` first. Never author the HTML yourself; the shell is fixed.
+  The learner answers in the page, presses Grade, and pastes the result back:
+  ```bash
+  python3 $SCRIPTS/upskill.py ingest --subject <s> --output "<pasted text>" --checkpoint
+  ```
+
+Markdown or JSON is the source; HTML is only ever a rendering of it.
 
 Then record the checkpoint:
 
@@ -214,6 +227,28 @@ spaced review evidence, because getting a word right once is not knowing it.
 | `09-state-contract.md` | File locations, schemas, what to do when a file is broken |
 | `10-ui-contract.md` | Only when producing the HTML dashboard |
 | `11-execution-environments.md` | Step 1 and Step 3 — where practical work runs, and generating notebooks for it |
+| `12-html-lessons.md` | Step 6 when `presentation` is `html` — always for language subjects |
+
+## Cost
+
+Every rule here exists because this skill runs for hours across many sessions.
+
+- **Never author HTML or a notebook by hand.** Emit the JSON payload and let
+  `render_lesson.py` / `make_notebook.py` build the file. Measured on a real Japanese
+  lesson: 2.0 KB of JSON instead of 15.8 KB of HTML, and the 13.8 KB shell is written
+  once and reused forever.
+- **Load one archetype file, not three.** Same for `11-` and `12-`: read them when the
+  step needs them, never up front.
+- **Do not restate learner state.** `status` prints a compact table; summarise from that
+  rather than re-deriving it in prose.
+- **One lesson per session.** Do not draft the whole plan.
+- **Re-use, do not regenerate.** `plan` reports `changed: false` when the shape is
+  unchanged — say so instead of reprinting it. Vocabulary and example blocks can be
+  carried between lessons on the same concept.
+- **Delegate the mechanical parts.** Item authoring and rubric grading are well-specified
+  and belong in a subagent on a cheaper model; that also keeps answer keys out of this
+  conversation.
+- **Never paste a whole file back to the learner.** Report the path.
 
 ## Honesty requirements
 
