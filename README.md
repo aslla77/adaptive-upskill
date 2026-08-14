@@ -104,10 +104,19 @@ Tool grants from skill frontmatter expire when you send your next message, and a
 ```json
 {
   "permissions": {
-    "allow": ["Bash(python3 *upskill*.py *)", "Bash(python3 *make_notebook.py *)"]
+    "allow": [
+      "Bash(python3 *adaptive-upskill/scripts/*)",
+      "Bash(ls *)",
+      "Bash(open *)",
+      "Bash(say *)"
+    ]
   }
 }
 ```
+
+Match the scripts directory rather than individual filenames. Listing them by name means
+the one script a subject actually needs — `make_notebook.py` for PyTorch, `render_lesson.py`
+for Japanese — is the one that turns out to be missing.
 
 ## Use
 
