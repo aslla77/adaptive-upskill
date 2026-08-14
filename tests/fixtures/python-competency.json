@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "subject": "python",
+  "subject_label": "Python",
+  "archetype": "A",
+  "goal": {
+    "outcome": "Build a script that merges 5-6 monthly CSVs, totals by department, and saves to Excel",
+    "minutes_per_week": 180,
+    "deadline": null
+  },
+  "concepts": [
+    {
+      "id": "py-syntax",
+      "label": "Syntax and data types",
+      "can_do": "Read and write variables, conditionals and loops, and recognise errors caused by confusing numbers with strings",
+      "why": "The floor everything else stands on",
+      "importance": 1.0,
+      "goal_relevance": 1.0,
+      "prerequisites": [],
+      "estimated_minutes": 40
+    },
+    {
+      "id": "py-collections",
+      "label": "Tabular data with lists and dicts",
+      "can_do": "Read a CSV row into a list, total it by department name as the key, and filter with a comprehension",
+      "why": "'totals by department' is exactly this operation",
+      "importance": 1.3,
+      "goal_relevance": 1.3,
+      "prerequisites": [
+        "py-syntax"
+      ],
+      "estimated_minutes": 60
+    },
+    {
+      "id": "py-functions",
+      "label": "Wrapping repeated work in functions",
+      "can_do": "Turn the code that handles one file into a function and run it over six",
+      "why": "Copy-pasting means editing six places every month",
+      "importance": 1.2,
+      "goal_relevance": 1.1,
+      "prerequisites": [
+        "py-syntax"
+      ],
+      "estimated_minutes": 45
+    },
+    {
+      "id": "py-errors",
+      "label": "Reading errors and handling exceptions",
+      "can_do": "Find the failing line in a traceback, and keep processing when one file is broken",
+      "why": "Working alone means unblocking yourself",
+      "importance": 1.1,
+      "goal_relevance": 1.2,
+      "prerequisites": [
+        "py-functions"
+      ],
+      "estimated_minutes": 50
+    },
+    {
+      "id": "py-files-io",
+      "label": "Files, paths and encoding",
+      "can_do": "Read CSV and write Excel, and fix mojibake when cp949 and utf-8 disagree",
+      "why": "The entry and exit of the goal; encoding is where Korean CSVs almost always break",
+      "importance": 1.2,
+      "goal_relevance": 1.5,
+      "prerequisites": [
+        "py-collections",
+        "py-errors"
+      ],
+      "estimated_minutes": 60
+    },
+    {
+      "id": "py-modules",
+      "label": "Packages and virtual environments",
+      "can_do": "Install and use packages like openpyxl, and recognise a broken environment",
+      "why": "Saving to Excel needs a third-party package",
+      "importance": 0.9,
+      "goal_relevance": 1.3,
+      "prerequisites": [
+        "py-functions"
+      ],
+      "estimated_minutes": 40
+    }
+  ]
+}
