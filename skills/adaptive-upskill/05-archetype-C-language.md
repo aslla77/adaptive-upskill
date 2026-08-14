@@ -7,6 +7,19 @@ right once is not knowing it.
 
 This archetype breaks two assumptions the other two rely on, so read this before mapping.
 
+## Lessons are HTML here, not chat
+
+`presentation` is forced to `html` for this archetype and `init` rejects anything else.
+This is not a preference:
+
+- terminals compute CJK column widths wrong, so tables and alignment break apart
+- furigana and other ruby annotation cannot be shown at all
+- diacritics and rarer glyphs fall back to boxes depending on the installed font
+- learners need to *type* production answers, and a page can check them instantly
+
+Write a lesson JSON payload and render it with `render_lesson.py`. Never author the
+HTML. See `12-html-lessons.md`.
+
 ## What is different
 
 | | A / B | **C** |
@@ -47,8 +60,24 @@ concept, rather than being marked done.
 | Translate a specific sentence with a target structure | rubric | Constrain it so the rubric is checkable |
 | Produce a short message for a real scenario | rubric | The goal-relevant evidence for a writing goal |
 
-Speaking cannot be measured here. Say so rather than approximating it with written
-answers.
+### Listening can be measured. Speaking cannot.
+
+Generate the audio locally and ask a comprehension question about it:
+
+```bash
+say -v Kyoko -o <items>/<id>.aiff "明日の会議、何時からだっけ。……十時半だよ。"   # macOS
+```
+
+Pick the voice for the target language (`say -v ?` lists them). Tell the learner the
+file path and let them play it. Score the comprehension question deterministically like
+any other choice item, and store the transcript in the item so a dispute can be settled.
+
+Write distractors for **specific mishearings**, not for plausibility: a dropped 半, a
+number confusion, a counter that changes reading. Each wrong choice should name the
+listening error it catches.
+
+Speaking is still out of reach -- there is no way to capture the learner's voice here.
+Say so rather than approximating it with written answers.
 
 ## Item levels
 

@@ -44,6 +44,11 @@ ENVIRONMENTS = {
               "practical_task": ".ipynb with GPU setup, run on Colab"},
 }
 
+# How lessons are shown. Orthogonal to where code runs: a language learner has no
+# execution environment at all yet still needs a rendered page, because terminals
+# get CJK widths wrong, cannot show furigana, and drop glyphs the font lacks.
+PRESENTATIONS = ("chat", "html")
+
 # Per-archetype policy. Archetypes are defined in the skill reference files:
 #   A = tool/build, B = concept/model, C = language acquisition.
 ARCHETYPES = {
@@ -135,6 +140,14 @@ def validate_competency(doc):
     if doc["archetype"] == "C":
         _require(env == "none",
                  "archetype C is language learning; execution_environment must be 'none'")
+        # Non-Latin scripts and diacritics are not reliably legible in a terminal.
+        doc.setdefault("presentation", "html")
+    presentation = doc.setdefault("presentation", "chat")
+    _require(presentation in PRESENTATIONS,
+             "presentation must be one of %s" % list(PRESENTATIONS))
+    _require(not (doc["archetype"] == "C" and presentation != "html"),
+             "archetype C must use presentation 'html'; a terminal cannot render "
+             "furigana, CJK column widths, or missing-glyph fallbacks reliably")
     concepts = doc.get("concepts")
     _require(isinstance(concepts, list) and concepts, "concepts must be a non-empty list")
     ids = set()

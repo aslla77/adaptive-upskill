@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Adaptive Upskill — Lesson</title>
+<!--
+  Fixed lesson shell. Never regenerate this file per lesson.
+  render_lesson.py injects a JSON payload into #lesson-data; everything below is
+  constant. That is what keeps a lesson cheap: the model writes ~60 lines of JSON
+  instead of ~400 lines of HTML.
+
+  Self-contained on purpose: no CDN, no fonts, no network of any kind.
+-->
+<style>
+  :root {
+    --bg: #fbfaf8; --fg: #1b1a18; --muted: #6b6660; --line: #dfdad2;
+    --card: #ffffff; --accent: #2f5d50; --ok: #1c6b4a; --bad: #97331f;
+    --mark: #f3efe7;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161a; --fg: #e8e6e3; --muted: #9a958e; --line: #2c2f36;
+      --card: #1b1e24; --accent: #7fc0ad; --ok: #6fce9f; --bad: #e08a76;
+      --mark: #232730;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161a; --fg: #e8e6e3; --muted: #9a958e; --line: #2c2f36;
+    --card: #1b1e24; --accent: #7fc0ad; --ok: #6fce9f; --bad: #e08a76;
+    --mark: #232730;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem 6rem; background: var(--bg); color: var(--fg);
+    /* CJK, Latin-with-diacritics and IPA all need real fonts. This is the whole
+       reason language lessons moved out of the terminal. */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+      "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+      "Yu Gothic", "Meiryo", "Noto Sans JP", "Noto Sans KR", "Malgun Gothic",
+      "Microsoft YaHei", "Noto Sans SC", "Noto Sans TC", sans-serif;
+    line-height: 1.7; font-size: 17px;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; line-height: 1.35; margin: 0 0 .25rem; }
+  h2 { font-size: 1.1rem; margin: 2rem 0 .6rem; }
+  .sub { color: var(--muted); font-size: .9rem; margin: 0 0 1.5rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.1rem 1.2rem; margin: 1rem 0;
+  }
+  .target {
+    font-size: 1.5rem; line-height: 2.1; letter-spacing: .01em;
+  }
+  ruby rt { font-size: .5em; color: var(--muted); }
+  .gloss { color: var(--muted); font-size: .95rem; margin-top: .35rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .97rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; }
+  td.term { font-size: 1.15rem; }
+  .item { border-left: 3px solid var(--line); padding-left: 1rem; margin: 1.4rem 0; }
+  .item.correct { border-left-color: var(--ok); }
+  .item.wrong { border-left-color: var(--bad); }
+  .prompt { font-weight: 600; margin-bottom: .6rem; }
+  .choices { display: grid; gap: .45rem; margin: .5rem 0; }
+  label.choice {
+    display: flex; gap: .6rem; align-items: flex-start;
+    border: 1px solid var(--line); border-radius: 9px; padding: .55rem .7rem;
+    cursor: pointer; background: var(--card);
+  }
+  label.choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="text"], textarea {
+    width: 100%; font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: .55rem .7rem;
+  }
+  textarea { min-height: 6.5rem; resize: vertical; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--card); color: inherit;
+    padding: .5rem .9rem;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .verdict { font-size: .93rem; margin-top: .5rem; min-height: 1.4rem; }
+  .verdict.ok { color: var(--ok); }
+  .verdict.no { color: var(--bad); }
+  details.hint { margin-top: .5rem; font-size: .93rem; }
+  summary { cursor: pointer; color: var(--accent); }
+  .bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+  #result {
+    width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .9rem; white-space: pre; overflow-x: auto;
+    background: var(--mark); border: 1px solid var(--line); border-radius: 9px;
+    padding: .8rem; margin-top: .8rem;
+  }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title"></h1>
+  <p class="sub" id="subtitle"></p>
+  <section id="blocks"></section>
+
+  <h2>Check yourself</h2>
+  <section id="items"></section>
+
+  <div class="bar">
+    <button type="button" class="primary" id="grade">Grade</button>
+    <button type="button" id="copy">Copy result for the agent</button>
+    <button type="button" id="reset">Reset</button>
+  </div>
+  <pre id="result" aria-live="polite" tabindex="0">Answer the items, then press Grade.</pre>
+
+  <footer>
+    <p id="note"></p>
+    <p>Scores here are provisional. The agent records them only after you paste the
+       result line back.</p>
+  </footer>
+</main>
+
+<script id="lesson-data" type="application/json">{}</script>
+<script>
+(function () {
+  "use strict";
+
+  var DATA = JSON.parse(document.getElementById("lesson-data").textContent);
+  var KEY = "upskill:" + (DATA.lesson_id || "lesson");
+  var state = load();
+
+  // FNV-1a, 32-bit. Deliberately not a cryptographic hash: the job is to keep
+  // answers out of plain sight in the page source, not to resist an attacker.
+  // render_lesson.py implements the identical function so the two agree.
+  function hash(s) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return ("0000000" + h.toString(16)).slice(-8);
+  }
+
+  function norm(s, strict) {
+    var t = String(s == null ? "" : s);
+    if (t.normalize) t = t.normalize("NFC");
+    t = t.replace(/\s+/g, " ").trim();
+    return strict ? t : t.toLowerCase();
+  }
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // Renders inline ruby markup: 漢字[かんじ] -> <ruby>漢字<rt>かんじ</rt></ruby>
+  // Text is inserted with textContent throughout, never innerHTML.
+  function rich(target, text) {
+    var re = /([^\s\[\]]+)\[([^\]]+)\]/g, last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) target.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var ruby = document.createElement("ruby");
+      ruby.appendChild(document.createTextNode(m[1]));
+      var rt = document.createElement("rt");
+      rt.textContent = m[2];
+      ruby.appendChild(rt);
+      target.appendChild(ruby);
+      last = re.lastIndex;
+    }
+    if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
+    return target;
+  }
+
+  rich(document.getElementById("title"), DATA.title || "Lesson");
+  document.getElementById("subtitle").textContent =
+    [DATA.subject_label, DATA.concept_label, DATA.objective].filter(Boolean).join(" · ");
+  document.getElementById("note").textContent = DATA.note || "";
+
+  // ---- content blocks -----------------------------------------------------
+  var host = document.getElementById("blocks");
+  (DATA.blocks || []).forEach(function (b) {
+    if (b.type === "prose") {
+      var card = el("div", "card");
+      String(b.text).split("\n\n").forEach(function (para) {
+        card.appendChild(rich(el("p"), para));
+      });
+      host.appendChild(card);
+    } else if (b.type === "example") {
+      var c = el("div", "card");
+      c.appendChild(rich(el("p", "target"), b.target));
+      if (b.gloss) c.appendChild(rich(el("p", "gloss"), b.gloss));
+      if (b.note) c.appendChild(rich(el("p", "gloss"), b.note));
+      host.appendChild(c);
+    } else if (b.type === "table") {
+      var wrap = el("div", "card");
+      if (b.title) wrap.appendChild(el("h2", null, b.title));
+      var scroll = el("div");
+      scroll.style.overflowX = "auto";
+      var t = el("table"), thead = el("thead"), hr = el("tr");
+      (b.columns || []).forEach(function (h) { hr.appendChild(el("th", null, h)); });
+      thead.appendChild(hr); t.appendChild(thead);
+      var tb = el("tbody");
+      (b.rows || []).forEach(function (row) {
+        var tr = el("tr");
+        row.forEach(function (cell, i) {
+          var td = el("td", i === 0 ? "term" : null);
+          rich(td, String(cell));
+          tr.appendChild(td);
+        });
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb); scroll.appendChild(t); wrap.appendChild(scroll);
+      host.appendChild(wrap);
+    }
+  });
+
+  // ---- items --------------------------------------------------------------
+  var items = DATA.items || [];
+  var itemHost = document.getElementById("items");
+  var controls = {};
+
+  items.forEach(function (it, idx) {
+    var box = el("div", "item");
+    box.id = "item-" + it.id;
+    box.appendChild(rich(el("p", "prompt"), (idx + 1) + ". " + it.prompt));
+
+    if (it.type === "choice") {
+      var group = el("div", "choices");
+      (it.choices || []).forEach(function (choice, ci) {
+        var lab = el("label", "choice");
+        var radio = document.createElement("input");
+        radio.type = "radio"; radio.name = it.id; radio.value = String(ci);
+        if (state[it.id] === String(ci)) radio.checked = true;
+        radio.addEventListener("change", function () { state[it.id] = radio.value; save(); });
+        lab.appendChild(radio);
+        lab.appendChild(rich(el("span"), String(choice)));
+        group.appendChild(lab);
+      });
+      box.appendChild(group);
+      controls[it.id] = function () {
+        var picked = box.querySelector("input:checked");
+        return picked ? picked.value : "";
+      };
+    } else if (it.type === "free") {
+      var ta = document.createElement("textarea");
+      ta.id = "in-" + it.id;
+      ta.setAttribute("aria-label", it.prompt);
+      ta.value = state[it.id] || "";
+      ta.addEventListener("input", function () { state[it.id] = ta.value; save(); });
+      box.appendChild(ta);
+      controls[it.id] = function () { return ta.value; };
+    } else { // cloze / short answer
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.id = "in-" + it.id;
+      inp.setAttribute("aria-label", it.prompt);
+      if (it.placeholder) inp.placeholder = it.placeholder;
+      inp.value = state[it.id] || "";
+      inp.addEventListener("input", function () { state[it.id] = inp.value; save(); });
+      box.appendChild(inp);
+      controls[it.id] = function () { return inp.value; };
+    }
+
+    if (it.hint) {
+      var d = el("details", "hint");
+      d.appendChild(el("summary", null, "Hint"));
+      d.appendChild(rich(el("p"), it.hint));
+      box.appendChild(d);
+    }
+    box.appendChild(el("p", "verdict"));
+    itemHost.appendChild(box);
+  });
+
+  // ---- grading ------------------------------------------------------------
+  function grade() {
+    var passed = 0, gradable = 0, free = [];
+    items.forEach(function (it) {
+      var box = document.getElementById("item-" + it.id);
+      var verdict = box.querySelector(".verdict");
+      var value = controls[it.id]();
+      box.classList.remove("correct", "wrong");
+      verdict.classList.remove("ok", "no");
+
+      if (it.type === "free" || !it.answer_hash) {
+        free.push({ id: it.id, concept: it.concept, level: it.level, text: value });
+        verdict.textContent = value.trim()
+          ? "Recorded — the agent grades this one against its rubric."
+          : "Not answered yet.";
+        return;
+      }
+      gradable++;
+      var ok = hash(norm(value, it.strict)) === it.answer_hash;
+      if (ok) {
+        passed++;
+        box.classList.add("correct");
+        verdict.classList.add("ok");
+        verdict.textContent = "Correct." + (it.why ? "  " + it.why : "");
+      } else {
+        box.classList.add("wrong");
+        verdict.classList.add("no");
+        verdict.textContent = value.trim() ? "Not right yet." : "Not answered.";
+      }
+    });
+
+    var lines = ["UPSKILL_RESULT " + DATA.lesson_id + " " + passed + "/" + gradable];
+    if (free.length) {
+      lines.push("");
+      lines.push("--- free responses (paste these too) ---");
+      free.forEach(function (f) {
+        lines.push("[" + f.id + "] " + (f.text.trim() || "(blank)"));
+      });
+    }
+    var out = lines.join("\n");
+    document.getElementById("result").textContent = out;
+    state.__result = out;
+    save();
+    return out;
+  }
+
+  document.getElementById("grade").addEventListener("click", grade);
+
+  document.getElementById("copy").addEventListener("click", function () {
+    var text = state.__result || grade();
+    var box = document.getElementById("result");
+    box.textContent = text;
+    var range = document.createRange();
+    range.selectNodeContents(box);
+    var sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    try { document.execCommand("copy"); } catch (e) {}
+    box.focus();
+  });
+
+  document.getElementById("reset").addEventListener("click", function () {
+    state = {}; save();
+    location.reload();
+  });
+
+  if (state.__result) document.getElementById("result").textContent = state.__result;
+})();
+</script>
+</body>
+</html>
