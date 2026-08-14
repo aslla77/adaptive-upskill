@@ -137,6 +137,7 @@ skills/adaptive-upskill/
 ├── 10-ui-contract.md              dashboard contract
 ├── 11-execution-environments.md   none / local / notebook / colab
 ├── 12-html-lessons.md             the lesson payload format
+├── 13-prefetching.md              building the next lesson in the background
 ├── scripts/                       Python 3.8, standard library only
 └── assets/
     ├── lesson-shell.html          fixed page; never regenerated per lesson

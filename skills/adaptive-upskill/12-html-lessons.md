@@ -53,6 +53,11 @@ python3 $SCRIPTS/render_lesson.py --subject <s> --lesson <lesson.json>
 }
 ```
 
+### Inline markup
+
+`**text**` renders bold in the accent colour. Use it for the form the lesson is
+about — the particle, the ending, the one word that changes — and nowhere else.
+
 ### Ruby annotation
 
 `漢字[かんじ]` renders as ruby text above the characters. It works in prose, examples,
@@ -72,6 +77,28 @@ The parser splits on whitespace, so `漢字[かんじ]` works and `この 漢字
 `answer` for `choice` is the index, or the exact choice string. For `cloze` it is the
 expected text. Add `"strict": true` when case matters — comparison is otherwise
 case-insensitive after NFC normalisation and whitespace collapsing.
+
+**A kana answer is also accepted as romaji.** The renderer derives the reading itself,
+so `ねが` accepts `nega`, `NEGA`, `ne ga`. Long vowels collapse, so `koohii`, `ko-hi-`
+and `kōhī` all land on the same key. This matters more than it sounds: a learner with no
+Japanese IME cannot type kana at all, and telling them to install one before their first
+lesson is how the lesson does not happen. The page shows `Accepted: kana or romaji`
+under the field.
+
+Use `"accept": ["...", "..."]` for any other spelling that should pass.
+
+### Sentence-length answers must be `free`
+
+`render_lesson.py` **refuses** a `cloze` whose answer runs past three words or twelve
+characters. This is not a formatting rule.
+
+A learner who writes カフェ**に** instead of カフェ**で** has made exactly the mistake the
+lesson exists to teach, and exact matching can only answer "wrong". They learn nothing
+and conclude the tool is broken. Sentence production goes to `free`, where you grade it
+against your rubric and can say *which part* was off.
+
+Short slots — a particle, an ending, a reading — stay `cloze`. Everything longer is
+`free`.
 
 Give `cloze` items a `placeholder` when the expected form is ambiguous ("kana only",
 "one word"). Half the wrong answers in a language lesson are format mismatches, and those
@@ -123,7 +150,9 @@ Do not rebuild any of this in your payload:
 
 ## Limits worth stating
 
-- The page cannot play audio, so listening is still unmeasured.
-- A `cloze` item accepts exactly one spelling. Where several answers are legitimately
-  correct, use `choice`, or make it `free` and grade it.
+- The page does not play audio. Listening is measured separately, with a generated
+  file and a comprehension item (`05-archetype-C-language.md`).
+- A `cloze` accepts the written answer, its romaji reading, and anything listed in
+  `accept`. Where several answers are legitimately correct in ways you cannot enumerate,
+  use `choice`, or make it `free` and grade it.
 - Nothing here is a secure context; treat the file as readable by whoever has the disk.

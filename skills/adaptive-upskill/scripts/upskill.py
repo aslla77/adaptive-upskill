@@ -9,6 +9,7 @@ Subcommands:
   review    list concepts that are due for retrieval practice
   status    human-readable summary of where the learner stands
   ingest    read a pasted notebook UPSKILL_RESULT line and record it as evidence
+  prefetch  build the next lesson ahead of time so the learner never waits
   dispute   mark an item as disputed so it carries zero weight
 
 The model reports what happened (correct / tests passed / rubric points).
@@ -261,6 +262,85 @@ def cmd_ingest(args):
             "recorded": len(new)}
 
 
+def _load_prefetch(paths):
+    if os.path.exists(paths["prefetch"]):
+        return core.read_json(paths["prefetch"])
+    return core.empty_prefetch()
+
+
+def cmd_prefetch(args):
+    competency, evidence, p = core.load_state(args.subject, args.root)
+    plan = core.read_json(p["plan"]) if os.path.exists(p["plan"]) else None
+    progress = core.read_json(p["progress"]) if os.path.exists(p["progress"]) else {}
+    plan_version = (plan or {}).get("plan_version", progress.get("plan_version", 0))
+    state = _load_prefetch(p)
+    op = args.op
+
+    if op == "status":
+        current = core.next_module(plan)
+        target = core.prefetch_target(plan, current["concept"] if current else None)
+        entry = state.get("entry")
+        return {"op": op, "current_module": current, "build_next": target,
+                "entry": entry, "plan_version": plan_version,
+                "stats": state["stats"],
+                "should_build": bool(target) and not (
+                    entry and entry.get("concept") == (target or {}).get("concept")
+                    and entry.get("plan_version") == plan_version)}
+
+    if op == "claim":
+        if not args.concept:
+            raise core.UpskillError("claim needs --concept")
+        target = core.prefetch_target(plan, None)
+        for module in ((plan or {}).get("modules") or []):
+            if module["concept"] == args.concept:
+                target = module
+                break
+        state["entry"] = {"concept": args.concept, "status": "building",
+                          "kind": args.kind or (target or {}).get("kind"),
+                          "plan_version": plan_version, "started_at": core.now_iso()}
+        core.write_json(p["prefetch"], state)
+        return {"op": op, "entry": state["entry"]}
+
+    if op == "ready":
+        for field, value in (("--concept", args.concept), ("--lesson-id", args.lesson_id)):
+            if not value:
+                raise core.UpskillError("ready needs %s" % field)
+        if args.path and not os.path.exists(args.path):
+            raise core.UpskillError("ready --path points at a file that does not exist: %s"
+                                    % args.path)
+        previous = state.get("entry") or {}
+        state["entry"] = {"concept": args.concept, "status": "ready",
+                          "lesson_id": args.lesson_id, "path": args.path,
+                          "kind": args.kind or previous.get("kind"),
+                          "plan_version": plan_version, "ready_at": core.now_iso()}
+        core.write_json(p["prefetch"], state)
+        return {"op": op, "entry": state["entry"]}
+
+    if op == "take":
+        entry, miss = core.prefetch_take(state, plan, plan_version)
+        if entry:
+            state["stats"]["hits"] += 1
+            state["entry"] = None
+            core.write_json(p["prefetch"], state)
+            return {"op": op, "hit": True, "entry": entry, "stats": state["stats"]}
+        state["stats"]["misses"] += 1
+        if miss in core.PREFETCH_DISCARD_REASONS:
+            state["stats"]["discarded"] += 1
+            state["entry"] = None
+        core.write_json(p["prefetch"], state)
+        return {"op": op, "hit": False, "reason": miss,
+                "explanation": core.PREFETCH_MISS_REASONS[miss],
+                "build_now": core.next_module(plan), "stats": state["stats"]}
+
+    if op == "discard":
+        state["entry"] = None
+        state["stats"]["discarded"] += 1
+        core.write_json(p["prefetch"], state)
+        return {"op": op, "stats": state["stats"]}
+
+    raise core.UpskillError("unknown prefetch op: %s" % op)
+
+
 def cmd_dispute(args):
     competency, evidence, p = core.load_state(args.subject, args.root)
     hits = 0
@@ -279,6 +359,33 @@ def cmd_dispute(args):
 
 def render(result, command):
     lines = []
+    if command == "prefetch":
+        op = result["op"]
+        if op == "status":
+            cur = result["current_module"]
+            nxt = result["build_next"]
+            e = result["entry"]
+            lines.append("current module : %s" % (cur["concept"] if cur else "(none)"))
+            lines.append("build ahead    : %s" % (nxt["concept"] if nxt else "(nothing left)"))
+            if e:
+                lines.append("prefetched     : %s [%s]" % (e["concept"], e["status"]))
+            else:
+                lines.append("prefetched     : (none)")
+            lines.append("plan_version   : %s" % result["plan_version"])
+            lines.append("SHOULD BUILD" if result["should_build"] else "nothing to do")
+            lines.append("stats: %s" % json.dumps(result["stats"]))
+        elif op == "take":
+            if result["hit"]:
+                e = result["entry"]
+                lines.append("HIT -- %s is ready: %s" % (e["concept"], e.get("path") or e["lesson_id"]))
+            else:
+                lines.append("MISS (%s) -- %s" % (result["reason"], result["explanation"]))
+                b = result["build_now"]
+                lines.append("build now: %s" % (b["concept"] if b else "(nothing)"))
+            lines.append("stats: %s" % json.dumps(result["stats"]))
+        else:
+            lines.append(json.dumps(result.get("entry") or result.get("stats"),
+                                    ensure_ascii=False))
     if command == "ingest":
         lines.append("%s: %d/%d checks passed -> %s" %
                      (result["task"], result["passed"], result["total"],
@@ -408,6 +515,14 @@ def main(argv=None):
     p_ingest.add_argument("--checkpoint", action="store_true",
                           help="record as a lesson checkpoint rather than diagnostic evidence")
 
+    p_prefetch = add("prefetch")
+    p_prefetch.add_argument("op", choices=["status", "claim", "ready", "take", "discard"])
+    p_prefetch.add_argument("--subject", required=True)
+    p_prefetch.add_argument("--concept")
+    p_prefetch.add_argument("--lesson-id", dest="lesson_id")
+    p_prefetch.add_argument("--path")
+    p_prefetch.add_argument("--kind")
+
     p_dispute = add("dispute")
     p_dispute.add_argument("--subject", required=True)
     p_dispute.add_argument("--item", required=True)
@@ -420,7 +535,8 @@ def main(argv=None):
 
     handlers = {"init": cmd_init, "score": cmd_score, "plan": cmd_plan,
                 "update": cmd_update, "review": cmd_review, "status": cmd_status,
-                "ingest": cmd_ingest, "dispute": cmd_dispute}
+                "ingest": cmd_ingest, "prefetch": cmd_prefetch,
+                "dispute": cmd_dispute}
     try:
         result = handlers[args.command](args)
     except core.UpskillError as exc:

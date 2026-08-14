@@ -580,6 +580,86 @@ def due_reviews(mastery, evidence_records, as_of=None):
 # Workspace helpers
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Prefetch
+# --------------------------------------------------------------------------
+#
+# Authoring a lesson takes long enough that the learner sits waiting between
+# modules. So the next one is built in the background while they work on the
+# current one, and handed over instantly when they finish.
+#
+# Depth is deliberately 1. A failed checkpoint re-orders the plan, and anything
+# built beyond the next module would usually be thrown away -- prefetching three
+# deep would spend more tokens than the waiting costs.
+
+PREFETCH_MISS_REASONS = {
+    "empty": "nothing has been prefetched yet",
+    "building": "the next lesson is still being written",
+    "not_yet": "the prefetched lesson is further down the plan, not next -- kept",
+    "stale_plan": "the module changed shape after this lesson was built",
+    "wrong_concept": "the concept left the plan entirely",
+}
+
+# Only these justify throwing the work away. `not_yet` and `building` must not,
+# or a take() called a moment too early destroys a perfectly good lesson.
+PREFETCH_DISCARD_REASONS = ("stale_plan", "wrong_concept")
+
+
+def empty_prefetch():
+    return {"version": SCHEMA_VERSION, "entry": None,
+            "stats": {"hits": 0, "misses": 0, "discarded": 0}}
+
+
+def next_module(plan):
+    modules = (plan or {}).get("modules") or []
+    return modules[0] if modules else None
+
+
+def prefetch_target(plan, exclude_concept=None):
+    """Which module should be built ahead of time: the one after the current."""
+    modules = (plan or {}).get("modules") or []
+    for module in modules:
+        if exclude_concept is None or module["concept"] != exclude_concept:
+            return module
+    return None
+
+
+def prefetch_take(state, plan, plan_version):
+    """Hand over the prefetched lesson if it is the one now due.
+
+    The distinction that matters is between a lesson that is *wrong* and one that
+    is merely *early*. A checkpoint can leave the plan untouched, in which case the
+    prefetched lesson is still exactly right and must survive being asked for a
+    moment too soon.
+    """
+    entry = state.get("entry")
+    if not entry:
+        return None, "empty"
+    if entry.get("status") == "building":
+        return None, "building"
+
+    modules = (plan or {}).get("modules") or []
+    match = None
+    position = None
+    for index, module in enumerate(modules):
+        if module["concept"] == entry.get("concept"):
+            match, position = module, index
+            break
+
+    if match is None:
+        # Mastered, skipped, or newly locked -- it will never be taught as planned.
+        return None, "wrong_concept"
+    if position != 0:
+        return None, "not_yet"
+    if entry.get("kind") and match.get("kind") and entry["kind"] != match["kind"]:
+        # Same concept, different treatment: a foundation lesson is not a
+        # remediation lesson, so the prepared one no longer fits.
+        return None, "stale_plan"
+    if entry.get("path") and not os.path.exists(entry["path"]):
+        return None, "empty"
+    return entry, None
+
+
 def workspace(subject, root=None):
     base = root or os.environ.get("UPSKILL_ROOT") or os.path.join(os.getcwd(), ".upskill")
     return os.path.join(base, subject)
@@ -595,6 +675,7 @@ def paths(subject, root=None):
         "plan": os.path.join(ws, "plan.json"),
         "items": os.path.join(ws, "items"),
         "lessons": os.path.join(ws, "lessons"),
+        "prefetch": os.path.join(ws, "prefetch.json"),
     }
 
 

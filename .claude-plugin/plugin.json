@@ -1,7 +1,7 @@
 {
   "name": "adaptive-upskill",
   "description": "Measure what a learner can actually do before teaching, then teach only what is missing. The model teaches; deterministic scripts hold every score, decide when the diagnostic stops, and order the plan.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "aslla77",
     "url": "https://github.com/aslla77"

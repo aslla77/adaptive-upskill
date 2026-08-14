@@ -54,6 +54,7 @@
     font-size: 1.5rem; line-height: 2.1; letter-spacing: .01em;
   }
   ruby rt { font-size: .5em; color: var(--muted); }
+  strong { color: var(--accent); }
   .gloss { color: var(--muted); font-size: .95rem; margin-top: .35rem; }
   table { border-collapse: collapse; width: 100%; font-size: .97rem; }
   th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -112,7 +113,10 @@
     <button type="button" id="copy">Copy result for the agent</button>
     <button type="button" id="reset">Reset</button>
   </div>
-  <pre id="result" aria-live="polite" tabindex="0">Answer the items, then press Grade.</pre>
+  <pre id="result" tabindex="0">Answer the items, then press Grade.</pre>
+  <p class="gloss" id="copy-status" aria-live="polite"></p>
+  <p class="gloss">Paste the whole block back into the terminal. The score line is
+     recorded automatically; anything you wrote freely is read and marked there.</p>
 
   <footer>
     <p id="note"></p>
@@ -142,6 +146,29 @@
     return ("0000000" + h.toString(16)).slice(-8);
   }
 
+  // Must match romaji_key() in render_lesson.py exactly: same steps, same order.
+  // A learner without a Japanese IME types the reading, and it has to land on the
+  // same key as the kana answer the author wrote.
+  function romajiKey(s) {
+    var t = String(s == null ? "" : s);
+    if (t.normalize) t = t.normalize("NFKD");
+    t = t.toLowerCase().replace(/[\u0300-\u036f]/g, "");
+    t = t.replace(/[-\u30fc]/g, "").replace(/\s+/g, "");
+    var pairs = [["aa", "a"], ["ii", "i"], ["uu", "u"],
+                 ["ee", "e"], ["oo", "o"], ["ou", "o"]];
+    for (var i = 0; i < pairs.length; i++) {
+      t = t.split(pairs[i][0]).join(pairs[i][1]);
+    }
+    return t;
+  }
+
+  function accepts(it, value) {
+    var list = it.answer_hashes || (it.answer_hash ? [it.answer_hash] : []);
+    if (!list.length) return false;
+    if (list.indexOf(hash(norm(value, it.strict))) !== -1) return true;
+    return list.indexOf(hash("romaji:" + romajiKey(value))) !== -1;
+  }
+
   function norm(s, strict) {
     var t = String(s == null ? "" : s);
     if (t.normalize) t = t.normalize("NFC");
@@ -164,21 +191,38 @@
     return n;
   }
 
-  // Renders inline ruby markup: 漢字[かんじ] -> <ruby>漢字<rt>かんじ</rt></ruby>
-  // Text is inserted with textContent throughout, never innerHTML.
-  function rich(target, text) {
+  // Renders two inline forms and nothing else:
+  //   漢字[かんじ]  -> ruby, for readings
+  //   **text**      -> bold, for the form the lesson is about
+  // Everything is inserted with textContent, never innerHTML.
+  function ruby(text) {
+    var frag = document.createDocumentFragment();
     var re = /([^\s\[\]]+)\[([^\]]+)\]/g, last = 0, m;
     while ((m = re.exec(text)) !== null) {
-      if (m.index > last) target.appendChild(document.createTextNode(text.slice(last, m.index)));
-      var ruby = document.createElement("ruby");
-      ruby.appendChild(document.createTextNode(m[1]));
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var node = document.createElement("ruby");
+      node.appendChild(document.createTextNode(m[1]));
       var rt = document.createElement("rt");
       rt.textContent = m[2];
-      ruby.appendChild(rt);
-      target.appendChild(ruby);
+      node.appendChild(rt);
+      frag.appendChild(node);
       last = re.lastIndex;
     }
-    if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    return frag;
+  }
+
+  function rich(target, text) {
+    var src = String(text == null ? "" : text);
+    var re = /\*\*([^*]+)\*\*/g, last = 0, m;
+    while ((m = re.exec(src)) !== null) {
+      if (m.index > last) target.appendChild(ruby(src.slice(last, m.index)));
+      var strong = document.createElement("strong");
+      strong.appendChild(ruby(m[1]));
+      target.appendChild(strong);
+      last = re.lastIndex;
+    }
+    target.appendChild(ruby(src.slice(last)));
     return target;
   }
 
@@ -264,10 +308,11 @@
       var inp = document.createElement("input");
       inp.type = "text"; inp.id = "in-" + it.id;
       inp.setAttribute("aria-label", it.prompt);
-      if (it.placeholder) inp.placeholder = it.placeholder;
+      inp.placeholder = it.placeholder || it.accept_hint || "";
       inp.value = state[it.id] || "";
       inp.addEventListener("input", function () { state[it.id] = inp.value; save(); });
       box.appendChild(inp);
+      if (it.accept_hint) box.appendChild(el("p", "gloss", "Accepted: " + it.accept_hint));
       controls[it.id] = function () { return inp.value; };
     }
 
@@ -291,7 +336,7 @@
       box.classList.remove("correct", "wrong");
       verdict.classList.remove("ok", "no");
 
-      if (it.type === "free" || !it.answer_hash) {
+      if (it.type === "free" || !(it.answer_hashes || it.answer_hash)) {
         free.push({ id: it.id, concept: it.concept, level: it.level, text: value });
         verdict.textContent = value.trim()
           ? "Recorded — the agent grades this one against its rubric."
@@ -299,7 +344,7 @@
         return;
       }
       gradable++;
-      var ok = hash(norm(value, it.strict)) === it.answer_hash;
+      var ok = accepts(it, value);
       if (ok) {
         passed++;
         box.classList.add("correct");
@@ -330,15 +375,39 @@
   document.getElementById("grade").addEventListener("click", grade);
 
   document.getElementById("copy").addEventListener("click", function () {
-    var text = state.__result || grade();
+    // Always re-grade first: copying a stale block is worse than a slow click.
+    var text = grade();
     var box = document.getElementById("result");
-    box.textContent = text;
-    var range = document.createRange();
-    range.selectNodeContents(box);
-    var sel = window.getSelection();
-    sel.removeAllRanges(); sel.addRange(range);
-    try { document.execCommand("copy"); } catch (e) {}
-    box.focus();
+    var status = document.getElementById("copy-status");
+
+    function selectIt() {
+      var range = document.createRange();
+      range.selectNodeContents(box);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    function done(ok) {
+      status.textContent = ok
+        ? "Copied. Paste the whole block into the terminal."
+        : "Could not copy automatically — the text is selected, press Cmd/Ctrl+C.";
+      if (!ok) { selectIt(); box.focus(); }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); },
+                                               function () { fallback(); });
+    } else {
+      fallback();
+    }
+
+    function fallback() {
+      selectIt();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      done(ok);
+    }
   });
 
   document.getElementById("reset").addEventListener("click", function () {

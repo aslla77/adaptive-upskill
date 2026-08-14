@@ -49,6 +49,82 @@ def fnv1a(text):
     return "%08x" % h
 
 
+# Kana -> Hepburn romaji. Deterministic, so the renderer can accept a romaji
+# answer without the learner needing a Japanese IME installed.
+_ROMAJI = {
+    "きゃ": "kya", "きゅ": "kyu", "きょ": "kyo", "しゃ": "sha", "しゅ": "shu",
+    "しょ": "sho", "ちゃ": "cha", "ちゅ": "chu", "ちょ": "cho", "にゃ": "nya",
+    "にゅ": "nyu", "にょ": "nyo", "ひゃ": "hya", "ひゅ": "hyu", "ひょ": "hyo",
+    "みゃ": "mya", "みゅ": "myu", "みょ": "myo", "りゃ": "rya", "りゅ": "ryu",
+    "りょ": "ryo", "ぎゃ": "gya", "ぎゅ": "gyu", "ぎょ": "gyo", "じゃ": "ja",
+    "じゅ": "ju", "じょ": "jo", "びゃ": "bya", "びゅ": "byu", "びょ": "byo",
+    "ぴゃ": "pya", "ぴゅ": "pyu", "ぴょ": "pyo",
+    "あ": "a", "い": "i", "う": "u", "え": "e", "お": "o",
+    "か": "ka", "き": "ki", "く": "ku", "け": "ke", "こ": "ko",
+    "さ": "sa", "し": "shi", "す": "su", "せ": "se", "そ": "so",
+    "た": "ta", "ち": "chi", "つ": "tsu", "て": "te", "と": "to",
+    "な": "na", "に": "ni", "ぬ": "nu", "ね": "ne", "の": "no",
+    "は": "ha", "ひ": "hi", "ふ": "fu", "へ": "he", "ほ": "ho",
+    "ま": "ma", "み": "mi", "む": "mu", "め": "me", "も": "mo",
+    "や": "ya", "ゆ": "yu", "よ": "yo",
+    "ら": "ra", "り": "ri", "る": "ru", "れ": "re", "ろ": "ro",
+    "わ": "wa", "を": "o", "ん": "n",
+    "が": "ga", "ぎ": "gi", "ぐ": "gu", "げ": "ge", "ご": "go",
+    "ざ": "za", "じ": "ji", "ず": "zu", "ぜ": "ze", "ぞ": "zo",
+    "だ": "da", "ぢ": "ji", "づ": "zu", "で": "de", "ど": "do",
+    "ば": "ba", "び": "bi", "ぶ": "bu", "べ": "be", "ぼ": "bo",
+    "ぱ": "pa", "ぴ": "pi", "ぷ": "pu", "ぺ": "pe", "ぽ": "po",
+    "ー": "", "っ": "*",
+}
+
+
+def _katakana_to_hiragana(text):
+    out = []
+    for ch in text:
+        code = ord(ch)
+        out.append(chr(code - 0x60) if 0x30A1 <= code <= 0x30F6 else ch)
+    return "".join(out)
+
+
+def kana_to_romaji(text):
+    """Best-effort Hepburn. Returns '' when the input is not purely kana."""
+    src = _katakana_to_hiragana(text)
+    out = []
+    i = 0
+    while i < len(src):
+        pair = src[i:i + 2]
+        if pair in _ROMAJI:
+            out.append(_ROMAJI[pair])
+            i += 2
+            continue
+        ch = src[i]
+        if ch in _ROMAJI:
+            out.append(_ROMAJI[ch])
+        elif ch in " \u3000":
+            out.append(" ")
+        else:
+            return ""   # kanji or latin present; do not guess
+        i += 1
+    romaji = "".join(out)
+    while "*" in romaji:                      # small tsu doubles the next consonant
+        index = romaji.index("*")
+        following = romaji[index + 1:index + 2]
+        romaji = romaji[:index] + (following or "") + romaji[index + 1:]
+    return romaji
+
+
+def romaji_key(value):
+    """Collapse the ways people spell the same romaji: spaces, macrons, long vowels."""
+    text = unicodedata.normalize("NFKD", str(value)).lower()
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = text.replace("-", "").replace("\u30fc", "")
+    text = re.sub(r"\s+", "", text)
+    for double, single in (("aa", "a"), ("ii", "i"), ("uu", "u"),
+                           ("ee", "e"), ("oo", "o"), ("ou", "o")):
+        text = text.replace(double, single)
+    return text
+
+
 def normalize(value, strict=False):
     text = unicodedata.normalize("NFC", str(value))
     text = re.sub(r"\s+", " ", text).strip()
@@ -85,6 +161,8 @@ def prepare(lesson):
                 "item %s needs an answer, or type 'free' if it cannot be checked"
                 % item["id"])
         answer = item.pop("answer")
+        if item["type"] == "cloze":
+            _reject_sentence_cloze(item, answer)
         if item["type"] == "choice":
             choices = item.get("choices") or []
             if isinstance(answer, int):
@@ -99,11 +177,55 @@ def prepare(lesson):
                 raise core.UpskillError("item %s: answer index out of range" % item["id"])
             item["answer_hash"] = fnv1a(normalize(str(index), strict=True))
         else:
-            item["answer_hash"] = fnv1a(normalize(answer, item.get("strict", False)))
+            hashes, hint = _cloze_hashes(item, answer)
+            item["answer_hash"] = hashes[0]      # kept for older shells
+            item["answer_hashes"] = hashes
+            if hint and not item.get("accept_hint"):
+                item["accept_hint"] = hint
         gradable += 1
 
     lesson["gradable_items"] = gradable
     return lesson
+
+
+# A learner without a Japanese IME cannot type kana at all. Rather than make them
+# install one, the renderer also accepts the romaji reading -- derived from the kana
+# answer, so the author writes the answer once.
+def _cloze_hashes(item, answer):
+    strict = item.get("strict", False)
+    hashes = [fnv1a(normalize(answer, strict))]
+    hint = None
+
+    romaji = kana_to_romaji(answer)
+    if romaji:
+        romaji_hash = fnv1a("romaji:" + romaji_key(romaji))
+        if romaji_hash not in hashes:
+            hashes.append(romaji_hash)
+        hint = "kana or romaji"
+
+    for alternate in item.pop("accept", []) or []:
+        for candidate in (fnv1a(normalize(alternate, strict)),
+                          fnv1a("romaji:" + romaji_key(alternate))):
+            if candidate not in hashes:
+                hashes.append(candidate)
+    return hashes, hint
+
+
+def _reject_sentence_cloze(item, answer):
+    """Whole-sentence production must not be graded by string comparison.
+
+    A learner who writes カフェに instead of カフェで is making exactly the mistake
+    worth teaching from, and an exact-match check can only answer "wrong". Anything
+    sentence-sized becomes a free item so the agent grades it against a rubric and
+    can say which part was off.
+    """
+    text = normalize(answer, strict=True)
+    words = len([w for w in re.split(r"\s+", text) if w])
+    if words > 3 or len(text) > 12:
+        raise core.UpskillError(
+            "item %s is a cloze whose answer is a whole phrase (%r). Exact matching "
+            "can only say 'wrong', which teaches nothing. Use \"type\": \"free\" and "
+            "grade it against a rubric instead." % (item["id"], answer))
 
 
 def manifest(lesson):

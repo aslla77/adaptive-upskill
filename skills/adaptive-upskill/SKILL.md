@@ -187,6 +187,30 @@ When a checkpoint fails, suspect the prerequisites first. A concept sitting at
 `assumed-ok` was never measured directly — measure it before re-teaching the concept
 on top of it.
 
+## Step 6b: Start the next lesson before it is asked for
+
+Writing a lesson is slow enough to be felt. Build the next one **while the learner works
+on this one**, so finishing a module is followed by the next lesson rather than a wait.
+
+Immediately after handing over the lesson:
+
+```bash
+python3 $SCRIPTS/upskill.py prefetch status --subject <subject>
+```
+
+If it says `SHOULD BUILD`, claim the slot and dispatch a **background subagent** to author
+it. When the learner finishes the module, after `update` and `plan`:
+
+```bash
+python3 $SCRIPTS/upskill.py prefetch take --subject <subject>
+```
+
+`HIT` means deliver it now and prefetch the one after. `MISS` means write it in the
+foreground. Read `13-prefetching.md` before the first dispatch — in particular, the
+background author writes one lesson file and calls `prefetch ready`, and must never run
+`score`, `update`, `ingest` or `plan`, because those rewrite state the foreground session
+is holding.
+
 ## Step 7: Status
 
 ```bash
@@ -228,6 +252,7 @@ spaced review evidence, because getting a word right once is not knowing it.
 | `10-ui-contract.md` | Only when producing the HTML dashboard |
 | `11-execution-environments.md` | Step 1 and Step 3 — where practical work runs, and generating notebooks for it |
 | `12-html-lessons.md` | Step 6 when `presentation` is `html` — always for language subjects |
+| `13-prefetching.md` | Step 6 — building the next lesson in the background so the learner never waits |
 
 ## Cost
 
@@ -249,6 +274,8 @@ Every rule here exists because this skill runs for hours across many sessions.
   and belong in a subagent on a cheaper model; that also keeps answer keys out of this
   conversation.
 - **Never paste a whole file back to the learner.** Report the path.
+- **Prefetch one lesson deep, never more.** A discarded prefetch costs the full price of
+  writing it. Watch the hit/discard counts and stop prefetching if discards catch up.
 
 ## Honesty requirements
 

@@ -58,6 +58,7 @@ concept, rather than being marked done.
 | Cloze / transformation / correct-the-error | deterministic — `correct` | Use heavily; cheap and reproducible |
 | Comprehension question over a short passage | deterministic | Good for reading and listening |
 | Translate a specific sentence with a target structure | rubric | Constrain it so the rubric is checkable |
+| Sentence production | **rubric, never exact match** | An exact-match check can only say "wrong"; the mistake is the lesson |
 | Produce a short message for a real scenario | rubric | The goal-relevant evidence for a writing goal |
 
 ### Listening can be measured. Speaking cannot.
