@@ -264,6 +264,11 @@ def main():
         parity, detail = hash_parity()
         check("A12 python and browser hashes agree", parity, detail)
 
+        print("\nA13 prefetching")
+        problems, summary = prefetch_lifecycle(os.path.join(workdir, "prefetch"))
+        check("A13 prefetch hits, keeps early takes, and discards only stale work",
+              not problems, "; ".join(problems) or summary)
+
         print("\nsecurity")
         leaked = grep_secrets()
         check("no provider keys or tokens in the skill package", not leaked,
@@ -499,6 +504,98 @@ def hash_parity():
         bad = [s for s, a, b in zip(samples, expected, got) if a != b]
         return False, "disagree on: %s" % ", ".join(bad)
     return True, "%d samples incl. CJK, diacritics, astral plane" % len(samples)
+
+
+def prefetch_lifecycle(root):
+    """Walk the real sequence, including the two ways it could destroy good work."""
+    problems = []
+    env = dict(os.environ, UPSKILL_ROOT=root, UPSKILL_NOW="2026-08-15T12:00:00Z")
+    os.makedirs(root)
+
+    def cli(*args):
+        proc = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS, "upskill.py")] + list(args)
+            + ["--json"], capture_output=True, text=True, env=env)
+        if proc.returncode != 0:
+            raise RuntimeError("%s -> %s" % (" ".join(args), proc.stderr.strip()))
+        return json.loads(proc.stdout)
+
+    cli("init", "--file", MAP)
+    responses = os.path.join(root, "r.json")
+    with open(responses, "w", encoding="utf-8") as fh:
+        json.dump({"responses": [
+            {"item_id": "o1", "concept": "py-syntax", "level": 1, "correct": True},
+            {"item_id": "o2", "concept": "py-collections", "level": 2, "correct": False},
+            {"item_id": "o3", "concept": "py-functions", "level": 2, "correct": True},
+            {"item_id": "o4", "concept": "py-errors", "level": 3, "correct": True},
+            {"item_id": "o5", "concept": "py-files-io", "level": 2,
+             "passed": 2, "total": 3}]}, fh)
+    cli("score", "--subject", "python", "--responses", responses)
+    cli("plan", "--subject", "python")
+
+    status = cli("prefetch", "status", "--subject", "python")
+    if not status["should_build"]:
+        problems.append("nothing flagged for prefetch on a fresh plan")
+    target = (status.get("build_next") or {}).get("concept")
+    if not target:
+        return ["no module available to build ahead"], ""
+
+    cli("prefetch", "claim", "--subject", "python", "--concept", target)
+    mid = cli("prefetch", "take", "--subject", "python")
+    if mid.get("reason") != "building":
+        problems.append("a claimed-but-unfinished slot reported %r" % mid.get("reason"))
+
+    lesson = os.path.join(root, "python", "lessons", target + "-01.md")
+    os.makedirs(os.path.dirname(lesson), exist_ok=True)
+    with open(lesson, "w", encoding="utf-8") as fh:
+        fh.write("# prefetched\n")
+    cli("prefetch", "ready", "--subject", "python", "--concept", target,
+        "--lesson-id", target + "-01", "--path", lesson)
+
+    early = cli("prefetch", "take", "--subject", "python")
+    if early.get("reason") != "not_yet":
+        problems.append("taking early reported %r, expected not_yet" % early.get("reason"))
+    if early["stats"]["discarded"] != 0:
+        problems.append("taking early discarded the prefetched lesson")
+    state = json.load(open(os.path.join(root, "python", "prefetch.json"), encoding="utf-8"))
+    if not state.get("entry"):
+        problems.append("the prefetched lesson did not survive an early take")
+
+    checkpoint = os.path.join(root, "cp.json")
+    with open(checkpoint, "w", encoding="utf-8") as fh:
+        json.dump({"responses": [
+            {"item_id": "cp1", "concept": "py-collections", "level": 2, "correct": True},
+            {"item_id": "cp2", "concept": "py-collections", "level": 3,
+             "correct": True}]}, fh)
+    cli("update", "--subject", "python", "--responses", checkpoint)
+    cli("plan", "--subject", "python")
+
+    hit = cli("prefetch", "take", "--subject", "python")
+    if not hit.get("hit"):
+        problems.append("no hit after the module completed: %r" % hit.get("reason"))
+    elif hit["entry"]["concept"] != target:
+        problems.append("hit returned the wrong concept")
+    if hit["stats"]["hits"] != 1:
+        problems.append("hit was not counted")
+
+    # A concept that leaves the plan entirely must be dropped, not handed over.
+    cli("prefetch", "claim", "--subject", "python", "--concept", "py-syntax")
+    ghost = os.path.join(root, "python", "lessons", "py-syntax-01.md")
+    with open(ghost, "w", encoding="utf-8") as fh:
+        fh.write("# stale\n")
+    cli("prefetch", "ready", "--subject", "python", "--concept", "py-syntax",
+        "--lesson-id", "py-syntax-01", "--path", ghost)
+    dropped = cli("prefetch", "take", "--subject", "python")
+    if dropped.get("hit"):
+        problems.append("handed over a lesson for a concept that left the plan")
+    elif dropped.get("reason") != "wrong_concept":
+        problems.append("a departed concept reported %r" % dropped.get("reason"))
+    if dropped["stats"]["discarded"] != 1:
+        problems.append("a genuinely stale lesson was not discarded")
+
+    return problems, "hit=%d miss=%d discarded=%d" % (
+        dropped["stats"]["hits"], dropped["stats"]["misses"],
+        dropped["stats"]["discarded"])
 
 
 PORTABLE_FIELDS = {"name", "description", "license", "compatibility",
